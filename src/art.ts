@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import {paintCharacter} from './character';
+import {paintCharacter,HERO_SIZE} from './character';
 import {CharacterMotion} from './character-motion';
 
 export function makeArt(scene: Phaser.Scene) {
@@ -32,7 +32,7 @@ export function makeArt(scene: Phaser.Scene) {
   if (kind === 'ore') for (const [x, y] of [[28, 35], [54, 31], [52, 53]]) { line(c, x, y, x + 8, y - 4, '#e0ac79', 5); line(c, x + 1, y - 2, x + 5, y - 4, '#f4d4a2', 2); }
  });
  make('relic', 100, 112, c => { ellipse(c, 50, 98, 79, 19, '#10262b45'); round(c, 13, 45, 74, 49, 7, '#425b62'); round(c, 16, 39, 68, 13, 5, '#91a6a1'); round(c, 28, 59, 44, 25, 4, '#213d49'); c.strokeStyle = '#c9b68c'; c.lineWidth = 2; c.strokeRect(32, 62, 36, 18); line(c, 38, 73, 47, 67, '#a7d6bd', 2); line(c, 47, 67, 58, 75, '#a7d6bd', 2); round(c, 35, 17, 28, 20, 3, '#8daaa1'); line(c, 42, 21, 57, 28, '#d5dfb7', 2); ellipse(c, 50, 94, 25, 6, '#b6d8a955'); });
- make('player-front-0',72,88,c=>{const canvas=document.createElement('canvas');canvas.width=160;canvas.height=160;paintCharacter(canvas.getContext('2d')!,new CharacterMotion().pose(),{x:0,y:1},{weapon:null,head:null,body:null,feet:null});c.drawImage(canvas,40,25,80,118,6,0,60,88);});
+ make('player-front-0',72,88,c=>{const canvas=document.createElement('canvas');canvas.width=HERO_SIZE;canvas.height=HERO_SIZE;paintCharacter(canvas.getContext('2d')!,new CharacterMotion().pose(),{x:0,y:1},{weapon:null,head:null,body:null,feet:null});c.drawImage(canvas,HERO_SIZE/2-40,18,80,126,6,0,60,88);});
  for (const elite of [false, true]) make(elite ? 'warden' : 'guard', 80, 104, c => {
   ellipse(c, 40, 93, 53, 14, '#0f20294d'); round(c, 25, 65, 12, 26, 4, '#394d5b'); round(c, 44, 65, 12, 26, 4, '#394d5b'); round(c, 20, 87, 19, 8, 3, '#2a3b48'); round(c, 43, 87, 19, 8, 3, '#2a3b48');
   round(c, 15, 36, 14, 29, 5, '#536775'); round(c, 53, 36, 14, 29, 5, '#536775'); round(c, 23, 31, 36, 40, 8, elite ? '#a2746a' : '#7f9696');

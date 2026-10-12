@@ -21,7 +21,7 @@ export class WorldScene extends Phaser.Scene {
   this.keys=this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,E,SPACE,SHIFT,B,C,ESC,I,TAB,R,ONE,TWO,THREE,FOUR,FIVE,SIX,SEVEN,EIGHT') as Record<string,Phaser.Input.Keyboard.Key>;
   this.input.keyboard!.addCapture(['SPACE','UP','DOWN','LEFT','RIGHT','TAB']);
   this.input.on('pointermove',(p:Phaser.Input.Pointer)=>{this.hasMouse=true;this.mouseTile={x:Math.floor(p.worldX/TILE),y:Math.floor(p.worldY/TILE)};});
-  this.input.on('pointerdown',(p:Phaser.Input.Pointer)=>{if(this.paused||this.uiBlocked)return;this.hasMouse=true;this.mouseTile={x:Math.floor(p.worldX/TILE),y:Math.floor(p.worldY/TILE)};if(this.dismantling)this.dismantle(this.mouseTile.x,this.mouseTile.y);else if(this.selected)this.build(this.mouseTile.x,this.mouseTile.y);else{const dx=p.worldX-this.actor.x,dy=p.worldY-this.actor.y;const l=Math.hypot(dx,dy)||1;this.facing={x:dx/l,y:dy/l};this.attack();}});
+  this.input.on('pointerdown',(p:Phaser.Input.Pointer)=>{if(this.paused||this.uiBlocked)return;this.hasMouse=true;this.mouseTile={x:Math.floor(p.worldX/TILE),y:Math.floor(p.worldY/TILE)};if(this.dismantling)this.dismantle(this.mouseTile.x,this.mouseTile.y);else if(this.selected)this.build(this.mouseTile.x,this.mouseTile.y);else if(this.attackTimer<=0){const dx=p.worldX-this.actor.x,dy=p.worldY-this.actor.y;const l=Math.hypot(dx,dy)||1;this.facing={x:dx/l,y:dy/l};this.attack();}});
   this.events.once('shutdown',()=>{this.input.keyboard?.removeAllListeners();});
   this.drawEquipment();this.wasDanger=this.state.x>=EDGE*TILE;this.excursion=this.wasDanger;this.onUI();
  }
@@ -64,9 +64,9 @@ export class WorldScene extends Phaser.Scene {
   const moving=Math.hypot(dx,dy)>0;if(moving){const l=Math.hypot(dx,dy);dx/=l;dy/=l;if(this.character.motion.action!=='attack'&&this.character.motion.action!=='harvest')this.facing={x:dx,y:dy};this.walkTime+=dt;}
   if(Phaser.Input.Keyboard.JustDown(this.keys.SHIFT))this.dash();
   const oldX=this.actor.x,oldY=this.actor.y;const speed=this.dashTimer>0?590:185;this.move(this.actor,(this.dashTimer>0?this.facing.x:dx)*speed*dt,(this.dashTimer>0?this.facing.y:dy)*speed*dt);
-  if(this.character.motion.step(dt,Math.hypot(this.actor.x-oldX,this.actor.y-oldY)>.1)){const contact=this.pendingContact;this.pendingContact=null;contact?.();}
+  if(this.character.motion.step(dt,Math.hypot(this.actor.x-oldX,this.actor.y-oldY)>.1,Math.hypot(this.actor.x-oldX,this.actor.y-oldY)/HERO_SCALE)){const contact=this.pendingContact;this.pendingContact=null;contact?.();}
   this.actor.setDepth(this.actor.y);
-  this.actor.setAlpha(this.hurtTimer>.1?Math.sin(this.state.time*45)>.0?.35:.9:1);this.stamina=Math.min(100,this.stamina+dt*19);
+  this.actor.setAlpha(this.hurtTimer>0?.84+Math.sin(this.state.time*14)*.12:1);this.stamina=Math.min(100,this.stamina+dt*19);
   if(Phaser.Input.Keyboard.JustDown(this.keys.E))this.interact();if(Phaser.Input.Keyboard.JustDown(this.keys.SPACE)){if(this.dismantling)this.dismantle(Math.floor((this.actor.x+this.facing.x*70)/TILE),Math.floor((this.actor.y+this.facing.y*70)/TILE));else if(this.selected)this.placeAhead();else this.attack();}
   if(Phaser.Input.Keyboard.JustDown(this.keys.B))this.chooseTool('build');
   if(Phaser.Input.Keyboard.JustDown(this.keys.I)||Phaser.Input.Keyboard.JustDown(this.keys.TAB))this.chooseTool('bag');
@@ -121,8 +121,8 @@ export class WorldScene extends Phaser.Scene {
   this.pendingContact=()=>this.attackImpact(aim);
  }
  attackImpact(aim:{x:number;y:number}){
-  const {x,y}=this.actor;const angle=Math.atan2(aim.y,aim.x);const color=this.state.weapon==='storm'?0xa6e3d5:0xe5cf9b;
-  const arc=this.add.graphics().setDepth(y+200);arc.lineStyle(this.state.weapon==='hands'?4:7,color,.85);arc.beginPath();arc.arc(x,y-18,this.state.weapon==='hands'?42:68,angle-.8,angle+.8);arc.strokePath();this.tweens.add({targets:arc,alpha:0,duration:240,onComplete:()=>arc.destroy()});
+  const {x,y}=this.actor;const color=this.state.weapon==='storm'?0xa6e3d5:0xe5cf9b;
+  const contact=this.add.circle(x+aim.x*42,y-18+aim.y*35,3,color,.65).setDepth(y+200);this.tweens.add({targets:contact,alpha:0,scale:1.7,duration:100,onComplete:()=>contact.destroy()});
   this.playTone(this.state.weapon==='storm'?520:240,.06);
   const reach=this.state.weapon==='hands'?76:112;
   let hit=false;
