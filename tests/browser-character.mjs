@@ -1,0 +1,25 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import {newGame,generateWorld,TILE} from '../src/world.ts';
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+try{
+const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.GAME_URL||'http://127.0.0.1:5173');
+const d=()=>page.evaluate(()=>window.labyrinthDiagnostics);
+async function load(s){await page.evaluate(s=>window.addEventListener('pagehide',()=>localStorage.setItem('living-labyrinth-v1',JSON.stringify(s)),{once:true}),s);await page.reload();await page.waitForFunction(()=>window.labyrinthDiagnostics?.ready);await page.getByRole('button',{name:'Продолжить путь'}).click();}
+const s=newGame();s.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-9,n.y-16)<4).map(n=>n.id);s.gear={spear:0,storm:1,helmet:1,armor:1,boots:1};s.equipment={weapon:'storm',head:'helmet',body:'armor',feet:'boots'};s.weapon='storm';s.bag.wood=20;s.bag.stone=20;await load(s);
+assert.equal((await d()).actorTexture,'hero-live');assert.deepEqual((await d()).equipment,s.equipment);assert.equal((await d()).weapon,'storm');const breath=(await d()).animation.pose.bob;await page.waitForFunction(v=>Math.abs(window.labyrinthDiagnostics.animation.pose.bob-v)>.1,breath);
+await page.keyboard.down('d');await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='walk');const gait=(await d()).animation.gait;await page.waitForFunction(v=>window.labyrinthDiagnostics.animation.gait>v+.3,gait);await page.keyboard.up('d');
+const contacts=(await d()).animation.contacts;await page.keyboard.down('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='attack');await page.keyboard.up('Space');await page.waitForFunction(v=>window.labyrinthDiagnostics.animation.contacts===v+1,contacts);await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='idle');
+await page.keyboard.down('Shift');await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='dash');await page.keyboard.up('Shift');await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='idle');
+await page.getByRole('button',{name:'Пауза',exact:true}).click();const frozen=(await d()).animation;await page.waitForTimeout(200);assert.deepEqual((await d()).animation,frozen);await page.getByRole('button',{name:'Продолжить',exact:true}).click();
+await page.screenshot({path:'artifacts/v3-character-desktop.png'});
+// Actual E harvesting has a contact frame and gives resources only after repeated strikes.
+const wood=generateWorld(0).nodes.find(n=>n.kind==='tree'&&n.x<25&&n.y>10&&n.y<25);const harvest=newGame();harvest.x=wood.x*TILE+32;harvest.y=wood.y*TILE+90;harvest.removed=generateWorld(0).nodes.filter(n=>n.id!==wood.id&&Math.hypot(n.x-wood.x,n.y-wood.y)<3).map(n=>n.id);await load(harvest);
+for(let i=0;i<wood.hp;i++){await page.keyboard.down('e');await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='harvest');await page.keyboard.up('e');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown===0);}
+assert.ok((await d()).bag.wood>0);assert.equal((await d()).weapon,'hands');
+// A forge animates while its panel is open, without advancing the world or moving the player.
+const forge=newGame();forge.bag.wood=20;forge.bag.stone=20;forge.cells['10,16']={floor:true,station:{kind:'forge',durability:100}};forge.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-9,n.y-16)<4).map(n=>n.id);await load(forge);await page.keyboard.press('c');await page.locator('[data-select-recipe="spear"]').click();await page.locator('[data-recipe="spear"]').click();await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='craft');const atForge=(await d()).position;await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='idle');assert.deepEqual((await d()).position,atForge);assert.equal((await d()).gear.spear,1);await page.keyboard.press('Escape');
+// Damage triggers articulated recoil when the hero is not winding up an attack.
+const hurt=newGame();hurt.x=29*TILE+32;hurt.y=16*TILE+82;hurt.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-29,n.y-16)<3).map(n=>n.id);await load(hurt);await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='hurt'&&window.labyrinthDiagnostics.health<100);await page.waitForFunction(()=>window.labyrinthDiagnostics.animation.action==='idle');
+await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/v3-character-mobile.png'});assert.deepEqual(errors,[]);console.log('PASS: live articulated hero, idle breathing, walk, timed contact, dash, pause, actual bare-handed harvesting, forge animation in panel, gear and mobile rendering.');
+}catch(e){console.error(e);throw e;}finally{await browser.close();}

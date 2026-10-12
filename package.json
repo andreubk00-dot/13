@@ -1,6 +1,6 @@
 {
   "name": "living-labyrinth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:browser": "node tests/browser-smoke.mjs && node --experimental-strip-types tests/browser-gameplay.mjs",
+    "test:browser": "node tests/browser-smoke.mjs && node --experimental-strip-types tests/browser-gameplay.mjs && node --experimental-strip-types tests/browser-character.mjs",
     "pages:prepare": "npm run build && node scripts/prepare-pages.mjs"
   },
   "dependencies": {

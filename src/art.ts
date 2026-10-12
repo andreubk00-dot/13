@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import {paintCharacter} from './character';
+import {CharacterMotion} from './character-motion';
 
 export function makeArt(scene: Phaser.Scene) {
  const make = (name: string, w: number, h: number, draw: (c: CanvasRenderingContext2D) => void) => {
@@ -30,23 +32,7 @@ export function makeArt(scene: Phaser.Scene) {
   if (kind === 'ore') for (const [x, y] of [[28, 35], [54, 31], [52, 53]]) { line(c, x, y, x + 8, y - 4, '#e0ac79', 5); line(c, x + 1, y - 2, x + 5, y - 4, '#f4d4a2', 2); }
  });
  make('relic', 100, 112, c => { ellipse(c, 50, 98, 79, 19, '#10262b45'); round(c, 13, 45, 74, 49, 7, '#425b62'); round(c, 16, 39, 68, 13, 5, '#91a6a1'); round(c, 28, 59, 44, 25, 4, '#213d49'); c.strokeStyle = '#c9b68c'; c.lineWidth = 2; c.strokeRect(32, 62, 36, 18); line(c, 38, 73, 47, 67, '#a7d6bd', 2); line(c, 47, 67, 58, 75, '#a7d6bd', 2); round(c, 35, 17, 28, 20, 3, '#8daaa1'); line(c, 42, 21, 57, 28, '#d5dfb7', 2); ellipse(c, 50, 94, 25, 6, '#b6d8a955'); });
- for (const direction of ['front', 'back', 'side']) for (let frame = 0; frame < 8; frame++) make(`player-${direction}-${frame}`, 72, 88, c => {
-  const walk = Math.sin(frame / 8 * Math.PI * 2), lift = Math.abs(walk) * 1.4, bob = frame === 0 ? 0 : lift;
-  ellipse(c, 36, 80, 39, 11, '#15283150');
-  const left = direction === 'side' ? -walk * 3 : walk * 4, right = -left;
-  round(c, 25, 58 + left, 9, 18, 4, '#283e4d'); round(c, 39, 58 + right, 9, 18, 4, '#283e4d');
-  round(c, 23, 72 + left, 12, 8, 3, '#50423b'); round(c, 38, 72 + right, 13, 8, 3, '#50423b'); line(c, 25, 74 + left, 32, 74 + left, '#ab8c65', 2); line(c, 40, 74 + right, 48, 74 + right, '#ab8c65', 2);
-  round(c, 20, 34 - bob, 11, 25, 5, '#ae754e'); round(c, 43, 34 - bob, 10, 25, 5, '#885d46');
-  ellipse(c, 23, 56 - bob - walk * 2, 9, 10, '#e0bda0'); ellipse(c, 49, 56 - bob + walk * 2, 9, 10, '#d5ac88');
-  round(c, 25, 32 - bob, 23, 32, 7, '#bf8a5b'); round(c, 25, 48 - bob, 23, 16, 4, '#a97750');
-  line(c, 26, 35 - bob, 44, 54 - bob, '#674d3b', 4); round(c, 22, 49 - bob, 11, 13, 3, '#6c5745'); line(c, 26, 57 - bob, 30, 57 - bob, '#c0a078', 2);
-  round(c, 23, 52 - bob, 26, 4, 2, '#614a3d'); round(c, 35, 52 - bob, 5, 5, 1, '#d6b888');
-  ellipse(c, 36, 25 - bob, 26, 28, '#523e33');
-  if (direction !== 'back') { ellipse(c, direction === 'side' ? 39 : 36, 26 - bob, 20, 23, '#dfbb97'); c.fillStyle = '#614b38'; c.beginPath(); c.moveTo(24, 22 - bob); c.quadraticCurveTo(24, 7 - bob, 38, 10 - bob); c.quadraticCurveTo(51, 11 - bob, 48, 22 - bob); c.lineTo(40, 18 - bob); c.lineTo(33, 21 - bob); c.closePath(); c.fill();
-   if (direction === 'front') { ellipse(c, 32, 26 - bob, 2.5, 3, '#243c45'); ellipse(c, 41, 26 - bob, 2.5, 3, '#243c45'); line(c, 34, 32 - bob, 38, 32 - bob, '#a7745a', 1); } else { ellipse(c, 44, 26 - bob, 3, 3, '#243c45'); line(c, 46, 31 - bob, 49, 31 - bob, '#b48667', 1); }
-  } else { round(c, 25, 11 - bob, 22, 26, 9, '#654e3a'); round(c, 25, 37 - bob, 21, 19, 5, '#5e6e60'); line(c, 28, 44 - bob, 43, 44 - bob, '#94a080', 3); }
-  round(c, 25, 33 - bob, 24, 6, 3, '#cbd7b3'); if (direction !== 'back') round(c, 40, 36 - bob, 5, 12, 2, '#bbc6a0');
- });
+ make('player-front-0',72,88,c=>{const canvas=document.createElement('canvas');canvas.width=160;canvas.height=160;paintCharacter(canvas.getContext('2d')!,new CharacterMotion().pose(),{x:0,y:1},{weapon:null,head:null,body:null,feet:null});c.drawImage(canvas,40,25,80,118,6,0,60,88);});
  for (const elite of [false, true]) make(elite ? 'warden' : 'guard', 80, 104, c => {
   ellipse(c, 40, 93, 53, 14, '#0f20294d'); round(c, 25, 65, 12, 26, 4, '#394d5b'); round(c, 44, 65, 12, 26, 4, '#394d5b'); round(c, 20, 87, 19, 8, 3, '#2a3b48'); round(c, 43, 87, 19, 8, 3, '#2a3b48');
   round(c, 15, 36, 14, 29, 5, '#536775'); round(c, 53, 36, 14, 29, 5, '#536775'); round(c, 23, 31, 36, 40, 8, elite ? '#a2746a' : '#7f9696');
