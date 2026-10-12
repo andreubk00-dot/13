@@ -1,42 +1,53 @@
-import {chromium} from 'playwright';
+import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import {newGame,key,TILE,generateWorld} from '../src/world.ts';
-const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
-const page=await browser.newPage({viewport:{width:1440,height:900}});
-const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.goto(process.env.GAME_URL||'http://127.0.0.1:5173');
-const diagnostics=()=>page.evaluate(()=>window.labyrinthDiagnostics);
-async function load(s){await page.evaluate(s=>window.addEventListener('pagehide',()=>localStorage.setItem('living-labyrinth-v1',JSON.stringify(s)),{once:true}),s);await page.reload();await page.waitForFunction(()=>window.labyrinthDiagnostics?.ready);await page.getByRole('button',{name:'Продолжить путь'}).click();}
-const base=newGame();base.bag={wood:100,stone:100,ore:50,iron:20,spark:10};base.weapon='spear';base.fragments=[2,1,1];
-// The fixture starts with no structures: build an actual floor and station through input.
-await load(base);
-await page.getByRole('button',{name:'Строить',exact:true}).click();await page.locator('[data-build="floor"]').click();await page.getByRole('button',{name:'Закрыть',exact:true}).click();
-await page.locator('#game canvas').click({position:{x:608,y:386}});
-await page.waitForFunction(()=>window.labyrinthDiagnostics.cells['9,15']?.floor);
-assert.equal((await diagnostics()).bag.wood,98,'floor consumes wood');
-await page.getByRole('button',{name:'Строить',exact:true}).click();await page.locator('[data-build="furnace"]').click();await page.getByRole('button',{name:'Закрыть',exact:true}).click();
-await page.locator('#game canvas').click({position:{x:608,y:386}});await page.waitForFunction(()=>window.labyrinthDiagnostics.cells['9,15']?.station);
-await page.keyboard.press('Escape');await page.keyboard.press('e');await page.locator('[data-recipe="iron"]').click();
-assert.equal((await diagnostics()).cells['9,15'].station.durability,96,'outdoor smelting consumes four durability');
-assert.equal((await diagnostics()).bag.iron,21,'smelting produces iron');
-const inside=newGame();inside.bag={wood:100,stone:100,ore:50,iron:20,spark:10};inside.weapon='spear';inside.fragments=[2,1,1];
-for(let x=6;x<=10;x++)for(let y=14;y<=18;y++)inside.cells[key(x,y)]=x===6||x===10||y===14||y===18?{wall:true}:{floor:true,roof:true};
-inside.cells['8,18']={door:true};inside.cells['8,16'].station={kind:'furnace',durability:100};inside.cells['9,15'].station={kind:'forge',durability:100};inside.cells['8,17'].station={kind:'chest',durability:100};
-await load(inside);
-await page.getByRole('button',{name:'Крафт',exact:true}).click();await page.locator('[data-recipe="iron"]').click();assert.equal((await diagnostics()).cells['8,16'].station.durability,98,'closed room halves wear');
-await page.locator('[data-recipe="salvage"]').click();assert.deepEqual((await diagnostics()).fragments,[1,1,1],'salvage retains one of each required part');assert.equal((await diagnostics()).bag.wood,100,'duplicate becomes one ordinary wood after smelting');
-await page.locator('[data-recipe="blueprint"]').click();assert.equal((await diagnostics()).learned,true);assert.deepEqual((await diagnostics()).fragments,[0,0,0]);
-await page.locator('[data-recipe="storm"]').click();assert.equal((await diagnostics()).weapon,'storm');assert.equal((await diagnostics()).bag.iron,13);assert.equal((await diagnostics()).cells['9,15'].station.durability,98);
-await page.locator('[data-recipe="armor"]').click();assert.equal((await diagnostics()).armor,true);assert.equal((await diagnostics()).cells['9,15'].station.durability,96);
-await page.getByRole('button',{name:'Закрыть',exact:true}).click();await page.screenshot({path:'artifacts/built-base.png'});
-// Save the real played state, reload, and confirm both knowledge and base persist.
-await page.getByRole('button',{name:'Пауза',exact:true}).click();await page.reload();await page.waitForFunction(()=>window.labyrinthDiagnostics?.ready);await page.getByRole('button',{name:'Продолжить путь'}).click();assert.equal((await diagnostics()).weapon,'storm');assert.equal((await diagnostics()).cells['9,15'].station.durability,96);
-// Combat fixture puts the player in striking range of the guard, away from resource obstacles.
-const combat=newGame();combat.x=29*TILE+32;combat.y=16*TILE+32+55;combat.weapon='storm';combat.armor=true;combat.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-29,n.y-16)<3).map(n=>n.id);
-await load(combat);await page.keyboard.down('w');await page.waitForTimeout(100);await page.keyboard.up('w');for(let i=0;i<3;i++){await page.keyboard.down('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown>0);await page.keyboard.up('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown===0);}
-assert.ok((await diagnostics()).enemies<4,'combat defeats a real guard');assert.ok((await diagnostics()).fragments[1]>=1,'guard drops mechanism part');
-await page.screenshot({path:'artifacts/labyrinth-combat.png'});
-// Crossing back to the permanent world resets the changing side without deleting the base.
-const crossing=newGame();crossing.x=25*TILE+10;crossing.y=16*TILE+32;crossing.cells['9,15']={floor:true};crossing.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-25,n.y-16)<3).map(n=>n.id);
-await load(crossing);await page.keyboard.down('a');await page.waitForFunction(()=>window.labyrinthDiagnostics.cycle===1);await page.keyboard.up('a');assert.equal((await diagnostics()).cycle,1);assert.equal((await diagnostics()).cells['9,15'].floor,true);
-assert.deepEqual(errors,[]);console.log('PASS: floor/station placement, outdoor and indoor smelting, duplicate salvage, blueprint assembly, forging weapon and armor, save restoration, combat loot, world cycle/base retention.');await browser.close();
+import { newGame, key, TILE, generateWorld } from '../src/world.ts';
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+try {
+ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errors = []; page.on('pageerror', e => errors.push(e.message));
+ await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5173');
+ const d = () => page.evaluate(() => window.labyrinthDiagnostics);
+ async function load(s) { await page.evaluate(s => window.addEventListener('pagehide', () => localStorage.setItem('living-labyrinth-v1', JSON.stringify(s)), { once: true }), s); await page.reload(); await page.waitForFunction(() => window.labyrinthDiagnostics?.ready); await page.getByRole('button', { name: 'Продолжить путь' }).click(); }
+ async function choose(id) { if ((await d()).panel) await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Строить', exact: true }).click(); const tab = ['furnace','forge','chest'].includes(id) ? 'workshops' : id==='fence'?'outside':'house'; await page.locator(`[data-build-tab="${tab}"]`).click(); await page.locator(`[data-build="${id}"]`).click(); await page.locator('[data-action="place-build"]').click(); assert.equal((await d()).selected,id); }
+ async function place(x,y,flag) { const camera=(await d()).camera; await page.locator('#game canvas').click({position:{x:((x+.5)*TILE-camera.x)*camera.zoom,y:((y+.5)*TILE-camera.y)*camera.zoom}}); await page.waitForFunction(({k,flag})=>!!window.labyrinthDiagnostics.cells[k]?.[flag],{k:key(x,y),flag}); }
+ const s = newGame(); s.bag={wood:250,stone:100,ore:50,iron:30,spark:10};s.fragments=[2,1,1]; await load(s);
+ // Build a complete house using the actual menu and pointer input.
+ await choose('floor'); for(let x=8;x<=10;x++)for(let y=15;y<=17;y++)await place(x,y,'floor');
+ await choose('wall'); for(let x=7;x<=11;x++)for(let y=14;y<=18;y++)if((x===7||x===11||y===14||y===18)&&!(x===9&&y===18))await place(x,y,'wall');
+ await choose('door');await place(9,18,'door');
+ await choose('roof');for(let x=8;x<=10;x++)for(let y=15;y<=17;y++)await place(x,y,'roof');
+ await choose('furnace');await place(8,15,'station');await choose('forge');await place(10,15,'station');await choose('chest');await place(8,17,'station');await page.keyboard.press('Escape');
+ console.log('House built through input');let state=await d();assert.equal(state.sheltered['8,15'],true);assert.equal(state.sheltered['10,15'],true);assert.ok(Object.keys(state.cells).length>=25);await page.screenshot({path:'artifacts/v2-built-house.png'});
+ // The wall blocks normal walking and a dash. The nearby door actually opens and is traversable.
+ await page.keyboard.down('w');await page.waitForFunction(()=>window.labyrinthDiagnostics.position.y<970);await page.keyboard.down('Shift');await page.waitForTimeout(550);await page.keyboard.up('Shift');await page.keyboard.up('w');assert.ok((await d()).position.y>=14*TILE+32+23,'north wall remains solid while dashing');
+ await page.keyboard.down('s');await page.waitForFunction(()=>window.labyrinthDiagnostics.position.y>1221);await page.keyboard.up('s');assert.ok((await d()).doorOpen['9,18']>.3,'door animates open');
+ await choose('fence');for(let x=8;x<=12;x++)await place(x,21,'fence');await page.getByRole('button',{name:'Строить',exact:true}).click();await page.locator('[data-action="dismantle"]').click();let gateCamera=(await d()).camera;await page.locator('#game canvas').click({position:{x:((10+.5)*TILE-gateCamera.x)*gateCamera.zoom,y:((21+.5)*TILE-gateCamera.y)*gateCamera.zoom}});await page.waitForFunction(()=>!window.labyrinthDiagnostics.cells['10,21']?.fence);await choose('door');await place(10,21,'door');await choose('furnace');await place(8,19,'station');await page.keyboard.press('Escape');await page.keyboard.down('e');await page.waitForFunction(()=>window.labyrinthDiagnostics.panel==='furnace');await page.keyboard.up('e');await page.locator('[data-recipe="iron"]').click();console.log('Door, wall collision and exterior fence checked');assert.equal((await d()).cells['8,19'].station.durability,96,'outdoor furnace wears twice as fast');await page.keyboard.press('Escape');
+ await page.screenshot({path:'artifacts/v2-house-and-fence.png'});
+ await page.keyboard.down('w');await page.waitForFunction(()=>window.labyrinthDiagnostics.position.y<1058);await page.keyboard.up('w');
+ await page.keyboard.down('e');await page.waitForFunction(()=>window.labyrinthDiagnostics.panel==='furnace');await page.keyboard.up('e');await page.locator('[data-recipe="iron"]').click();assert.equal((await d()).cells['8,15'].station.durability,98,'closed room halves station wear');await page.keyboard.press('Escape');
+ await page.keyboard.press('c');assert.equal((await d()).panel,'forge');assert.equal(await page.locator('[data-recipe="iron"]').count(),0,'furnace recipe is not in the forge');await page.screenshot({path:'artifacts/v2-forge.png'});
+ for(const recipe of ['spear','armor','helmet','boots']){await page.locator(`[data-select-recipe="${recipe}"]`).click();await page.locator(`[data-recipe="${recipe}"]`).click();assert.equal((await d()).gear[recipe],1);}
+ assert.equal((await d()).weapon,'hands','new weapon goes to the backpack rather than equipping itself');
+ await page.locator('[data-forge-tab="blueprints"]').click();await page.screenshot({path:'artifacts/v2-blueprints.png'});await page.locator('[data-recipe="blueprint"]').click();assert.equal((await d()).learned,true);assert.deepEqual((await d()).fragments,[1,0,0]);const wood=(await d()).bag.wood;await page.locator('[data-recipe="salvage"]').click();assert.equal((await d()).bag.wood,wood+1);assert.deepEqual((await d()).fragments,[0,0,0]);
+ await page.locator('[data-forge-tab="equipment"]').click();await page.locator('[data-select-recipe="storm"]').click();await page.locator('[data-recipe="storm"]').click();assert.equal((await d()).gear.storm,1);assert.equal((await d()).cells['10,15'].station.durability,86,'all seven forge operations consume two durability each');
+ await page.keyboard.press('i');for(const id of ['spear','armor','helmet','boots']){await page.locator(`[data-item="gear-${id}:0"]`).click();await page.locator(`[data-equip="${id}"]`).click();}
+ assert.deepEqual((await d()).equipment,{weapon:'spear',head:'helmet',body:'armor',feet:'boots'});
+ await page.locator('[data-item="gear-storm:0"]').dragTo(page.locator('[data-hotbar="1"]'));assert.equal((await d()).hotbar[1],'gear:storm');
+ await page.locator('[data-item="wood:0"]').dragTo(page.locator('[data-inventory-index="23"]'));assert.equal((await d()).inventoryOrder[23],'wood:0');await page.screenshot({path:'artifacts/v2-equipped-backpack.png'});
+ await page.keyboard.press('Escape');await page.keyboard.press('2');assert.equal((await d()).weapon,'storm');
+ // Deliberately remove one part of the enclosure, verify loss of shelter and rebuild it.
+ await page.getByRole('button',{name:'Строить',exact:true}).click();await page.locator('[data-action="dismantle"]').click();const cam=(await d()).camera;await page.locator('#game canvas').click({position:{x:((11+.5)*TILE-cam.x)*cam.zoom,y:((16+.5)*TILE-cam.y)*cam.zoom}});await page.waitForFunction(()=>!window.labyrinthDiagnostics.cells['11,16']?.wall);assert.equal((await d()).sheltered['10,15'],false);await choose('wall');await place(11,16,'wall');assert.equal((await d()).sheltered['10,15'],true);await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Пауза',exact:true}).click();await page.reload();await page.waitForFunction(()=>window.labyrinthDiagnostics?.ready);await page.getByRole('button',{name:'Продолжить путь'}).click();assert.equal((await d()).weapon,'storm');assert.equal((await d()).gear.spear,1);assert.equal((await d()).cells['10,15'].station.durability,86);assert.equal((await d()).hotbar[1],'gear:storm');
+ // A real guard drops the appropriate fragment; combat uses the equipped weapon.
+ const combat=newGame();combat.x=29*TILE+32;combat.y=16*TILE+85;combat.gear.storm=1;combat.equipment.weapon='storm';combat.weapon='storm';combat.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-29,n.y-16)<3).map(n=>n.id);await load(combat);const enemies=(await d()).enemies;await page.keyboard.down('w');await page.waitForFunction(()=>window.labyrinthDiagnostics.facing.y===-1);await page.keyboard.up('w');
+ for(let i=0;i<2;i++){await page.keyboard.down('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown>0);await page.keyboard.up('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown===0);}assert.ok((await d()).enemies<enemies);assert.ok((await d()).fragments[1]>=1);
+
+ // A full backpack leaves enemy rewards on the ground; dropped stacks free room safely.
+ const full={...combat,bag:{wood:99*24,stone:0,ore:0,iron:0,spark:0}};await load(full);await page.keyboard.down('w');await page.waitForFunction(()=>window.labyrinthDiagnostics.facing.y===-1);await page.keyboard.up('w');
+ for(let i=0;i<2;i++){await page.keyboard.down('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown>0);await page.keyboard.up('Space');await page.waitForFunction(()=>window.labyrinthDiagnostics.attackCooldown===0);}
+ assert.equal((await d()).drops.length,1);assert.equal((await d()).bag.ore,0);const enemyLoot=(await d()).drops[0];await page.keyboard.press('i');
+ for(let i=0;i<3;i++){await page.locator('[data-item="wood:0"]').click();await page.locator('[data-drop-item="wood:0"]').click();}await page.keyboard.press('Escape');
+ await page.keyboard.down('w');await page.waitForFunction(y=>window.labyrinthDiagnostics.position.y<y+4,enemyLoot.y);await page.keyboard.up('w');await page.keyboard.down('e');await page.waitForFunction(()=>window.labyrinthDiagnostics.fragments[1]===1);await page.keyboard.up('e');assert.equal((await d()).bag.ore,2);assert.equal((await d()).drops.length,3);
+ const crossing=newGame();crossing.x=25*TILE+10;crossing.y=16*TILE+32;crossing.cells['9,15']={floor:true};crossing.removed=generateWorld(0).nodes.filter(n=>Math.hypot(n.x-25,n.y-16)<3).map(n=>n.id);await load(crossing);await page.keyboard.down('a');await page.waitForFunction(()=>window.labyrinthDiagnostics.cycle===1);await page.keyboard.up('a');assert.equal((await d()).cells['9,15'].floor,true);
+ const legacy={...newGame(),version:1,weapon:'storm',armor:true,learned:true,bag:{wood:23,stone:17,ore:8,iron:4,spark:2},cells:{'9,15':{floor:true}}};delete legacy.gear;delete legacy.equipment;delete legacy.hotbar;delete legacy.inventoryOrder;await load(legacy);assert.equal((await d()).saveVersion,2);assert.equal((await d()).equipment.weapon,'storm');assert.equal((await d()).equipment.body,'armor');assert.equal((await d()).bag.wood,23);assert.equal((await d()).cells['9,15'].floor,true);
+ assert.deepEqual(errors,[]);console.log('PASS: actual closed-house construction, connected walls/fences, wall collision and dash blocking, animated doors, indoor/outdoor wear, station-specific recipes/blueprints, manual equipment, inventory/hotbar drag-and-drop, dismantle/rebuild, persistence, combat, world reset and v1 migration.');
+} catch(error) { console.error(error); const pages=browser.contexts().flatMap(c=>c.pages()); if(pages[0]){console.log('Failure state:',await pages[0].evaluate(()=>window.labyrinthDiagnostics).catch(()=>null));await pages[0].screenshot({path:'artifacts/v2-test-failure.png',timeout:5000}).catch(()=>{});}throw error; } finally { await browser.close(); }
