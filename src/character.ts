@@ -1,96 +1,51 @@
 import Phaser from 'phaser';
-import {CharacterMotion,type CharacterPose,type Point} from './character-motion';
-import {projectRunJoint,mixPoint,sampleRunJoint} from './run-animation';
+import {CharacterMotion,type Point} from './character-motion';
+import {characterAtlas,type SpriteRect} from './generated/character-atlas';
 import type {SaveData} from './world';
-import {solveLimb,transformPoint,characterArm,weaponTransform,advanceAngle,HERO_SIZE,HERO_FOOT} from './character-rig';
-export {HERO_SIZE,HERO_FOOT,HERO_SCALE} from './character-rig';
-const tau=Math.PI*2;
-function oval(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,color:string){c.fillStyle=color;c.beginPath();c.ellipse(x,y,w/2,h/2,0,0,tau);c.fill();}
-function stroke(c:CanvasRenderingContext2D,a:Point,b:Point,color:string,width:number){c.strokeStyle=color;c.lineWidth=width;c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();}
-function box(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,color:string,r=4){c.fillStyle=color;c.beginPath();c.roundRect(x,y,w,h,r);c.fill();}
-export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,facing:Point,equipment:SaveData['equipment'],trail:Point[]=[]){
- c.clearRect(0,0,HERO_SIZE,HERO_SIZE);c.save();c.lineCap='round';c.lineJoin='round';
- const flight=Math.max(0,Math.min(sampleRunJoint('foot.L.head',pose.runPhase)[2],sampleRunJoint('foot.R.head',pose.runPhase)[2])-.065)*54*pose.running;
- oval(c,HERO_SIZE/2,139,48-pose.crouch*.4-flight*.7,12-flight*.15,'#0b252e45');
- const side=Math.abs(facing.x),back=facing.y<-.38,profile=side>.86,mirror=facing.x<0,nearArm=facing.x>.3?-1:1;
- c.translate(HERO_SIZE/2,HERO_FOOT);if(mirror)c.scale(-1,1);c.translate(0,-HERO_FOOT);
- for(const sideName of ['L','R'] as const)if(pose.running>.05){const foot=sampleRunJoint(`foot.${sideName}.head`,pose.runPhase),point=projectRunJoint(`foot.${sideName}.head`,pose,facing),height=Math.max(0,foot[2]-.065)*54;oval(c,point.x,point.y+foot[2]*54,12,4,`rgba(11,37,46,${pose.running*.22/(1+height/12)})`);}
- const lean=pose.lean*(side*.85+.15),bob=pose.bob+pose.crouch;
- const center=lean*.5,width=16-side*5,pivot=mixPoint({x:center+lean*.5,y:74+bob},projectRunJoint('spine.tail',pose,facing),pose.running);
- const low=projectRunJoint('spine.head',pose,facing),high=projectRunJoint('spine.tail',pose,facing),bodyTurn=pose.turn*(1-pose.running)+Math.atan2(high.x-low.x,low.y-high.y)*pose.running;
- const attached=(x:number,y:number)=>transformPoint({x,y},pivot,bodyTurn);
- if(trail.length>1&&equipment.weapon==='storm'){c.strokeStyle='#b2e2cd65';c.lineWidth=3;c.beginPath();trail.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();}
- const boot=(foot:Point,near:boolean,roll:number)=>{
-  c.save();c.translate(foot.x,foot.y);c.rotate(roll);foot={x:0,y:0};
-  const col=equipment.feet?(near?'#718f92':'#49656d'):(near?'#554239':'#3c3333');
-  box(c,foot.x-6,foot.y-7,profile?18:14,10,col,4);stroke(c,{x:foot.x-4,y:foot.y+2},{x:foot.x+(profile?10:6),y:foot.y+2},'#202f37',3);
-  stroke(c,{x:foot.x-3,y:foot.y-4},{x:foot.x+5,y:foot.y-4},equipment.feet?'#c6d8c5':'#b09166',2);c.restore();
- };
- // Solve knees in the forward/up plane, then project depth into the facing direction.
- // Knees flex forward; front views no longer produce a bow-legged diamond.
- const leg=(sign:number,near:boolean)=>{
-  const foot=sign<0?pose.leftFoot:pose.rightFoot,hip=attached(sign*6,22);
-  const lateral=side>.2?sign*(7-side*3):hip.x,forwardHip=side>.2?(hip.x-lateral)/side:0;
-  const limb=solveLimb({x:forwardHip,y:hip.y-forwardHip*facing.y*.28},{x:foot.x,y:foot.y},20,21,-1);
-  const project=(p:Point)=>({x:lateral+p.x*side,y:p.y+p.x*facing.y*.28});
-  const sideName=sign<0?'L':'R',start=mixPoint({x:hip.x,y:hip.y},projectRunJoint(`thigh.${sideName}.head`,pose,facing),pose.running),knee=mixPoint(project(limb.joint),projectRunJoint(`shin.${sideName}.head`,pose,facing),pose.running),end=mixPoint(project(limb.end),projectRunJoint(`foot.${sideName}.head`,pose,facing),pose.running);
-  stroke(c,start,knee,'#263944',11);stroke(c,start,knee,near?'#566975':'#3d515f',8);stroke(c,knee,end,near?'#41596a':'#2c4251',8);const heel=sampleRunJoint(`foot.${sideName}.head`,pose.runPhase),toe=sampleRunJoint(`foot.${sideName}.tail`,pose.runPhase),runRoll=Math.atan2(-(toe[2]-heel[2]),toe[1]-heel[1]);boot(end,near,(foot.roll*(1-pose.running)+runRoll*pose.running)*side);
- };
- const leftGround=projectRunJoint('foot.L.head',pose,facing).y+sampleRunJoint('foot.L.head',pose.runPhase)[2]*54,rightGround=projectRunJoint('foot.R.head',pose,facing).y+sampleRunJoint('foot.R.head',pose.runPhase)[2]*54;
- if(pose.running>.25&&leftGround>rightGround){leg(1,false);leg(-1,true);}else{leg(-1,false);leg(1,true);}
- const armRig=(sign:number)=>characterArm(pose,facing,sign);
- const arm=(sign:number,near:boolean)=>{
-  const {root:a,joint:e,end:h}=armRig(sign);stroke(c,a,e,'#4a3833',12);stroke(c,a,e,near?'#c58c5d':'#96664c',9);stroke(c,e,h,'#4a3833',9);stroke(c,e,h,near?'#b88253':'#825942',6);oval(c,h.x,h.y,8,9,near?'#e8c49e':'#c79977');
-  const angle=Math.atan2(h.y-e.y,h.x-e.x);c.save();c.translate(h.x,h.y);c.rotate(angle-Math.PI/2);box(c,-4,-6,8,4,'#57443c',2);c.restore();
- };
- const weapon=(tool:boolean)=>{
-  const {hand:h,angle}=weaponTransform(pose,facing);
-  c.save();c.translate(h.x,h.y);c.rotate(angle);
-  if(tool){stroke(c,{x:-6,y:0},{x:27,y:0},'#704e35',4);box(c,19,-8,12,16,'#91a3a0',3);stroke(c,{x:21,y:-5},{x:28,y:-5},'#d4ddd0',2);}
-  else if(equipment.weapon==='spear'){stroke(c,{x:-15,y:0},{x:47,y:0},'#5b4231',5);stroke(c,{x:-15,y:-1},{x:47,y:-1},'#bd9965',2);c.fillStyle='#c5d7c7';c.beginPath();c.moveTo(59,0);c.lineTo(43,-6);c.lineTo(46,0);c.lineTo(43,6);c.closePath();c.fill();stroke(c,{x:46,y:0},{x:57,y:0},'#658482',1);}
-  else if(equipment.weapon==='storm'){stroke(c,{x:-8,y:0},{x:4,y:0},'#665239',5);stroke(c,{x:3,y:-8},{x:3,y:8},'#d4b986',4);c.fillStyle='#7fbeaf';c.beginPath();c.moveTo(6,-5);c.lineTo(41,-4);c.lineTo(49,0);c.lineTo(39,6);c.lineTo(6,4);c.closePath();c.fill();stroke(c,{x:8,y:-3},{x:42,y:-2},'#e4f5d8',2);stroke(c,{x:12,y:0},{x:35,y:0},'#bfded1',1);}
-  c.restore();
- };
- const tool=['craft','build'].includes(pose.action);
- arm(-nearArm,false);if(back||nearArm!==1)weapon(tool);
- // Coat silhouette, seams, belt and attached satchel move with the torso.
- c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);
- c.fillStyle='#4c3933';c.beginPath();c.moveTo(-width-1,-14);c.quadraticCurveTo(0,-24,width+1,-14);c.lineTo(width+3,26);c.quadraticCurveTo(0,31,-width-3,26);c.closePath();c.fill();
- const coat=c.createLinearGradient(-width,0,width,0);coat.addColorStop(0,'#b17950');coat.addColorStop(.55,'#cf9869');coat.addColorStop(1,'#9f684b');
- c.fillStyle=coat;c.beginPath();c.moveTo(-width,-13);c.quadraticCurveTo(0,-23,width,-13);c.lineTo(width+1,24);c.quadraticCurveTo(0,27,-width-1,24);c.closePath();c.fill();
- stroke(c,{x:0,y:-7},{x:0,y:24},'#82593f',1.5);stroke(c,{x:-width+3,y:23},{x:width-2,y:23},'#d7ae78',2);
- if(equipment.body){box(c,-width,-11,width*2,27,'#3b5561',6);box(c,-width+2,-12,width*2-4,24,'#789b9a',5);stroke(c,{x:-width+4,y:-8},{x:width-4,y:-8},'#d1dfc3',2);stroke(c,{x:0,y:-7},{x:0,y:10},'#b7cebd',2);box(c,-width-3,-13,10,9,'#8fb1a9');box(c,width-7,-13,10,9,'#688b91');}
- stroke(c,{x:-width,y:13},{x:width,y:13},'#594338',5);box(c,0,10,6,6,'#d7b97e',1);
- if(back){box(c,-width+1,-11,width*2-2,30,'#3d514e',6);box(c,-width+3,-12,width*2-6,25,'#677966',5);box(c,-width+3,-8,width*2-6,7,'#8c9b79',3);stroke(c,{x:-width+6,y:2},{x:width-6,y:2},'#a5ad85',2);box(c,-7,11,14,8,'#485b50',3);}
- else{stroke(c,{x:-width+1,y:-15},{x:width-3,y:14},'#614737',4);box(c,-width-4,12,12,14,'#604b3d',3);box(c,-width-3,12,10,5,'#8d7251',2);oval(c,-width+2,18,3,3,'#ccb079');}
- c.restore();
- // Scarf tails lag behind movement, instead of scaling the entire sprite.
- c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);c.fillStyle='#a4b88f';c.beginPath();c.moveTo(8,-14);c.lineTo(12+pose.cloth,8);c.lineTo(18+pose.cloth,5);c.lineTo(14,-16);c.closePath();c.fill();c.restore();
- const runHead=projectRunJoint('head.tail',pose,facing);runHead.y-=5.4;const head=mixPoint(attached(0,-32),runHead,pose.running),hx=head.x,hy=head.y;
- c.save();c.translate(hx,hy);c.rotate(pose.headTilt+bodyTurn*.35);
- oval(c,0,1,profile?27:32,35,'#493a33');
- if(!back){oval(c,profile?3:0,3,profile?23:27,30,'#e4bd96');oval(c,profile?-9:-14,4,7,9,'#cf9d79');
-  c.fillStyle='#594435';c.beginPath();c.moveTo(-15,-3);c.quadraticCurveTo(-17,-21,1,-19);c.quadraticCurveTo(18,-19,15,-4);c.lineTo(9,-9);c.lineTo(4,-6);c.lineTo(-3,-10);c.lineTo(-9,-2);c.closePath();c.fill();stroke(c,{x:-7,y:-14},{x:8,y:-15},'#876443',2);
-  if(profile){oval(c,10,1,3.2,4,'#243b43');c.fillStyle='#e4bd96';c.beginPath();c.moveTo(12,3);c.lineTo(18,7);c.lineTo(12,9);c.fill();stroke(c,{x:10,y:12},{x:14,y:12},'#9b6d53',1.4);}
-  else{oval(c,-6,2,3,4,'#243b43');oval(c,7,2,3,4,'#243b43');stroke(c,{x:-8,y:-3},{x:-4,y:-3},'#70513c',1.5);stroke(c,{x:5,y:-3},{x:9,y:-3},'#70513c',1.5);stroke(c,{x:-2,y:12},{x:4,y:12},'#a57557',1.3);}
- }else{oval(c,0,0,30,33,'#655039');stroke(c,{x:-7,y:-11},{x:3,y:-14},'#92714d',2);stroke(c,{x:8,y:-8},{x:11,y:3},'#7b5e42',2);}
- if(equipment.head){c.fillStyle='#749592';c.beginPath();c.moveTo(-16,-1);c.quadraticCurveTo(-18,-23,0,-23);c.quadraticCurveTo(18,-22,16,-1);c.lineTo(11,1);c.lineTo(9,-7);c.lineTo(-9,-7);c.lineTo(-11,1);c.closePath();c.fill();stroke(c,{x:0,y:-20},{x:0,y:-8},'#d2dfc7',3);stroke(c,{x:-13,y:-6},{x:13,y:-6},'#3c5a63',2);}
- c.restore();
- c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);box(c,-14,-18,28,7,'#d0dbb5',4);stroke(c,{x:-10,y:-16},{x:10,y:-16},'#eff0cc',1.5);c.restore();
- arm(nearArm,true);if(!back&&nearArm===1)weapon(tool);
- c.restore();
+export const HERO_SIZE=208,HERO_FOOT=138,HERO_SCALE=.85;
+const SCALE=1.5;
+export function preloadCharacter(scene:Phaser.Scene){characterAtlas.atlases.forEach((file,i)=>scene.load.image('kaykit-'+i,'./character/'+file));}
+export function characterImages(scene:Phaser.Scene){return characterAtlas.atlases.map((_file,i)=>scene.textures.get('kaykit-'+i).getSourceImage() as HTMLImageElement);}
+export function facingDirection(facing:Point){return ((Math.round(Math.atan2(facing.x,facing.y)/(Math.PI/4))%8)+8)%8;}
+export function paintArtistCharacter(c:CanvasRenderingContext2D,images:HTMLImageElement[],clip:string,direction:number,phase:number,equipment:SaveData['equipment']){
+ const animation=characterAtlas.clips[clip];
+ const frame=Math.min(animation.frames-1,Math.floor(Math.max(0,phase)*(animation.loop?animation.frames:animation.frames-1)));
+ const sprites=animation.sprites[direction][frame];
+ const draw=(r:SpriteRect)=>{const [atlas,x,y,w,h,ox,oy]=r;if(!w||!h)return;c.drawImage(images[atlas],x,y,w,h,HERO_SIZE/2+(ox-characterAtlas.width/2)*SCALE,HERO_FOOT+(oy-characterAtlas.ground)*SCALE,w*SCALE,h*SCALE);};
+ c.clearRect(0,0,HERO_SIZE,HERO_SIZE);
+ c.fillStyle='#0b252e38';c.beginPath();c.ellipse(HERO_SIZE/2,HERO_FOOT+1,24,6,0,0,Math.PI*2);c.fill();
+ const weapon=equipment.weapon==='storm'?4:equipment.weapon==='spear'?5:0;
+ const behind=direction>=3&&direction<=5;
+ if(weapon&&behind)draw(sprites[weapon]);
+ draw(sprites[0]);
+ if(equipment.feet)draw(sprites[3]);
+ if(equipment.body)draw(sprites[2]);
+ if(equipment.head)draw(sprites[1]);
+ if(weapon&&!behind)draw(sprites[weapon]);
+ return frame;
 }
 export class CharacterRenderer {
- motion=new CharacterMotion(); texture:Phaser.Textures.CanvasTexture; renders=0; private trail:Point[]=[];private lastClock=-1;private viewAngle:number|null=null;
- constructor(scene:Phaser.Scene){this.texture=scene.textures.createCanvas('hero-live',HERO_SIZE,HERO_SIZE)!;}
+ motion=new CharacterMotion();texture:Phaser.Textures.CanvasTexture;renders=0;frame=0;direction=0;source='KayKit Rogue';clip='idle';
+ private images:HTMLImageElement[];private lastSequence=-1;private lastDirection=-1;private lastGear='';private blendStart=-1;
+ private previous=document.createElement('canvas');
+ constructor(scene:Phaser.Scene){
+  this.images=characterImages(scene);this.texture=scene.textures.createCanvas('hero-live',HERO_SIZE,HERO_SIZE)!;
+  this.previous.width=HERO_SIZE;this.previous.height=HERO_SIZE;
+  // Only the live 208px canvas needs a GPU texture. Keep the trimmed source atlases on the CPU.
+  characterAtlas.atlases.forEach((_file,i)=>scene.textures.remove('kaykit-'+i));
+ }
+ portrait(equipment:SaveData['equipment']){
+  const full=document.createElement('canvas');full.width=HERO_SIZE;full.height=HERO_SIZE;paintArtistCharacter(full.getContext('2d')!,this.images,'idle',0,0,equipment);
+  const thumb=document.createElement('canvas');thumb.width=72;thumb.height=88;thumb.getContext('2d')!.drawImage(full,60,32,88,112,2,0,68,88);return thumb.toDataURL();
+ }
  draw(facing:Point,equipment:SaveData['equipment']){
-  this.motion.weapon=equipment.weapon==='spear'||equipment.weapon==='storm'?equipment.weapon:'hands';const pose=this.motion.pose();
-  const dt=this.lastClock<0?0:Math.max(0,Math.min(.1,this.motion.clock-this.lastClock)),target=Math.atan2(facing.y,facing.x);
-  this.viewAngle=this.viewAngle===null?target:advanceAngle(this.viewAngle,target,dt,pose.action==='attack'||pose.action==='harvest'?34:18);
-  const view={x:Math.cos(this.viewAngle),y:Math.sin(this.viewAngle)};
-  if(pose.action==='attack'&&equipment.weapon==='storm'&&this.motion.elapsed>.065&&this.motion.elapsed<.23){
-   if(this.lastClock!==this.motion.clock){const {hand,angle}=weaponTransform(pose,view);this.trail.push({x:hand.x+Math.cos(angle)*49,y:hand.y+Math.sin(angle)*49});if(this.trail.length>4)this.trail.shift();}
-  }else this.trail=[];
-  this.lastClock=this.motion.clock;paintCharacter(this.texture.getContext(),pose,view,equipment,this.trail);this.texture.refresh();this.renders++;
+  this.motion.weapon=equipment.weapon==='spear'||equipment.weapon==='storm'?equipment.weapon:'hands';
+  this.direction=facingDirection(facing);this.clip=this.motion.clip();
+  const gear=JSON.stringify(equipment),changed=this.lastSequence!==this.motion.sequence||this.lastDirection!==this.direction||this.lastGear!==gear;
+  if(changed){this.previous.getContext('2d')!.clearRect(0,0,HERO_SIZE,HERO_SIZE);this.previous.getContext('2d')!.drawImage(this.texture.getSourceImage() as HTMLCanvasElement,0,0);this.blendStart=this.motion.clock;this.lastSequence=this.motion.sequence;this.lastDirection=this.direction;this.lastGear=gear;}
+  const c=this.texture.getContext();this.frame=paintArtistCharacter(c,this.images,this.clip,this.direction,this.motion.phase(),equipment);
+  const t=Math.min(1,(this.motion.clock-this.blendStart)/.06);
+  if(t<1&&this.renders>0){c.globalAlpha=1-t;c.drawImage(this.previous,0,0);c.globalAlpha=1;}
+  this.texture.refresh();this.renders++;
  }
 }

@@ -5,3 +5,5 @@ test-results/
 artifacts/
 
 assets/character/*.blend1
+
+assets/vendor/kaykit/*.blend1

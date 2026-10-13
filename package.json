@@ -1,6 +1,6 @@
 {
   "name": "living-labyrinth",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:browser": "node tests/browser-smoke.mjs && node --experimental-strip-types tests/browser-gameplay.mjs && node --experimental-strip-types tests/browser-character.mjs",
     "pages:prepare": "npm run build && node scripts/prepare-pages.mjs",
-    "character:build": "blender -b --python assets/character/build_character.py",
-    "character:export": "blender -b assets/character/hero.blend --python assets/character/export_animation.py"
+    "character:build": "blender -b --python assets/vendor/kaykit/bake_character.py && blender -b --python assets/vendor/kaykit/bake_equipment.py && python3 assets/vendor/kaykit/pack_sprites.py"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",

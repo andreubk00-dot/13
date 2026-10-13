@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import {makeArt} from './art';
+import {actionDuration} from './character-motion';
 import {LocomotionBody} from './locomotion';
-import {CharacterRenderer,HERO_FOOT,HERO_SIZE,HERO_SCALE} from './character';
+import {CharacterRenderer,preloadCharacter,HERO_FOOT,HERO_SIZE,HERO_SCALE} from './character';
 import {paintGround,paintBuildings,paintStructure} from './rendering';
 import {TILE,WIDTH,HEIGHT,EDGE,key,generateWorld,newGame,parseSave,costs,spend,canAfford,placementError,isSheltered,wearStation,buildNames,resourceNames,emptyBag,fragmentNames,type Build,type Resource,type SaveData,type WorldNode,type Station,type Fragment,structureBlocked,inventoryItems,BACKPACK_SLOTS,gearInfo,equip,equipmentDefense,canAdd,recipeError,biomeAt,biomeNames,type GearId,type EquipmentSlot,validHotbarValue,roofCoversPoint,collectLoot,emptyGear,type GroundLoot} from './world';
 export const SAVE_KEY='living-labyrinth-v1';
@@ -12,6 +13,7 @@ export class WorldScene extends Phaser.Scene {
  state:SaveData=newGame(); actor!:Phaser.GameObjects.Sprite; grounds!:Phaser.GameObjects.Graphics; buildings!:Phaser.GameObjects.Graphics; roofs!:Phaser.GameObjects.Graphics; ghost!:Phaser.GameObjects.Graphics;
  lootSprites=new Map<string,Phaser.GameObjects.Sprite>();groundTiles:Phaser.GameObjects.Image[]=[];worldData=generateWorld(0);doorOpen=new Map<string,number>();nodeIndex=new Map<string,LiveNode>();ruinIndex=new Set<string>();uiBlocked=false;selectedRotation:0|1=0;onQuickSlot:(i:number)=>void=()=>{};nodes:LiveNode[]=[];enemies:Enemy[]=[];ruins:{x:number;y:number}[]=[];dismantling=false;ambientTimer=0;keys!:Record<string,Phaser.Input.Keyboard.Key>;stamina=100;paused=true;selected:Build|null=null;activeTool='gather';facing={x:1,y:0};attackTimer=0;hurtTimer=0;dashTimer=0;saveTimer=0;uiTimer=0;walkTime=0;wasDanger=false;excursion=false;mobile={x:0,y:0};mouseTile={x:0,y:0};hasMouse=false;storageAvailable=true;onUI:()=>void=()=>{};onToast:(text:string,bad?:boolean)=>void=()=>{};onStation:(station:Station,k:string)=>void=()=>{};onPanel:()=>void=()=>{};audio:AudioContext|null=null;soundEnabled=false;stationKey:string|null=null;groundCycle=-1;
  constructor(){super('world');}
+ preload(){preloadCharacter(this);}
  create(){
   try{const raw=localStorage.getItem(SAVE_KEY);const loaded=parseSave(raw);if(loaded){this.state=loaded;if(raw&&JSON.parse(raw).version===1&&!localStorage.getItem(SAVE_KEY+'-backup'))localStorage.setItem(SAVE_KEY+'-backup',raw);}else if(raw)this.onToast('Сохранение повреждено. Начат новый мир.',true);}catch{this.storageAvailable=false;}
   this.worldData=generateWorld(this.state.cycle);this.ruins=this.worldData.ruins;makeArt(this);this.grounds=this.add.graphics().setDepth(-100);this.buildings=this.add.graphics().setDepth(1);this.roofs=this.add.graphics().setDepth(10000);this.ghost=this.add.graphics().setDepth(10001);
@@ -118,9 +120,9 @@ export class WorldScene extends Phaser.Scene {
  enemySwing(e:Enemy){const g=this.add.graphics().setDepth(e.sprite.y+100);g.lineStyle(e.elite?7:4,0xe7a992,.75).strokeCircle(e.sprite.x,e.sprite.y-16,e.elite?67:47);this.tweens.add({targets:g,alpha:0,duration:220,onComplete:()=>g.destroy()});}
  attack(){
   if(this.attackTimer>0||this.paused||this.uiBlocked||this.dashTimer>0)return;if(this.stamina<12){this.onToast('Нужно перевести дух',true);return;}
-  this.stamina-=12;this.attackTimer=.4;
+  this.stamina-=12;
   const aim={...this.facing};const node=this.closestNode(90);const enemy=this.enemies.some(e=>Math.hypot(e.sprite.x-this.actor.x,e.sprite.y-this.actor.y)<112);
-  this.character.motion.play(!enemy&&node&&node.data.kind!=='relic'?'harvest':'attack');
+  const action=!enemy&&node&&node.data.kind!=='relic'?'harvest':'attack';this.attackTimer=actionDuration[action]!;this.character.motion.play(action);
   this.pendingContact=()=>this.attackImpact(aim);
  }
  attackImpact(aim:{x:number;y:number}){
@@ -138,7 +140,7 @@ export class WorldScene extends Phaser.Scene {
  }
  closestNode(range:number){return this.nodes.filter(n=>Math.hypot(n.sprite.x-this.actor.x,n.sprite.y-this.actor.y)<range).sort((a,b)=>Math.hypot(a.sprite.x-this.actor.x,a.sprite.y-this.actor.y)-Math.hypot(b.sprite.x-this.actor.x,b.sprite.y-this.actor.y))[0];}
  harvest(n:LiveNode){
-  if(this.attackTimer>0||this.dashTimer>0)return;this.attackTimer=.36;
+  if(this.attackTimer>0||this.dashTimer>0)return;this.attackTimer=actionDuration.harvest!;
   const dx=n.sprite.x-this.actor.x,dy=n.sprite.y-this.actor.y,d=Math.hypot(dx,dy)||1;this.facing={x:dx/d,y:dy/d};
   this.character.motion.play('harvest');this.pendingContact=()=>{if(this.nodes.includes(n)&&Math.hypot(n.sprite.x-this.actor.x,n.sprite.y-this.actor.y)<105)this.harvestImpact(n);};
  }
