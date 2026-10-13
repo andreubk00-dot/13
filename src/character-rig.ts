@@ -1,4 +1,5 @@
 import type {Point,CharacterPose} from './character-motion';
+import {projectRunJoint,mixPoint} from './run-animation.ts';
 export const HERO_SIZE=208,HERO_FOOT=138,HERO_SCALE=.85;
 export type Limb={root:Point;joint:Point;end:Point};
 /** Clamp the endpoint too: unreachable targets must never stretch a forearm or shin. */
@@ -13,7 +14,8 @@ export function transformPoint(point:Point,pivot:Point,angle:number):Point{retur
 export function characterArm(pose:CharacterPose,facing:Point,sign:number):Limb {
  const side=Math.abs(facing.x),lean=pose.lean*(side*.85+.15),pivot={x:lean,y:74+pose.bob+pose.crouch},width=16-side*5,h=sign<0?pose.leftHand:pose.rightHand;
  const root=transformPoint({x:sign*width,y:-9},pivot,pose.turn),target=transformPoint({x:h.x*(1-side*.25),y:h.y-82},pivot,pose.turn);
- return solveLimb(root,target,17,17,-sign);
+ const base=solveLimb(root,target,17,17,-sign),sideName=sign<0?'L':'R',t=pose.running;
+ return {root:mixPoint(base.root,projectRunJoint(`upper_arm.${sideName}.head`,pose,facing),t),joint:mixPoint(base.joint,projectRunJoint(`forearm.${sideName}.head`,pose,facing),t),end:mixPoint(base.end,projectRunJoint(`forearm.${sideName}.tail`,pose,facing),t)};
 }
 export function weaponTransform(pose:CharacterPose,facing:Point){return {hand:characterArm(pose,facing,1).end,angle:pose.weaponAngle+Math.atan2(facing.y,Math.abs(facing.x))*pose.aimWeight+pose.turn};}
 

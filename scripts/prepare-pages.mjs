@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,3 +11,7 @@ await mkdir(output, { recursive: true });
 await cp(built, output, { recursive: true });
 await writeFile(path.join(output, '.nojekyll'), '');
 console.log('GitHub Pages files prepared in docs/ (main branch, /docs source).');
+
+await mkdir(path.join(output, 'downloads'), { recursive: true });
+await copyFile(path.join(root, 'assets/character/hero.blend'), path.join(output, 'downloads/hero.blend'));
+await copyFile(path.join(root, 'assets/character/README.md'), path.join(output, 'downloads/character-guide.md'));

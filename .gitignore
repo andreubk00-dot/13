@@ -3,3 +3,5 @@ dist/
 .playwright/
 test-results/
 artifacts/
+
+assets/character/*.blend1

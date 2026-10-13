@@ -1,8 +1,9 @@
-export type CharacterAction = 'idle' | 'walk' | 'attack' | 'harvest' | 'dash' | 'hurt' | 'craft' | 'build' | 'pickup' | 'respawn';
+import {RUN_DISTANCE} from './run-animation.ts';
+export type CharacterAction = 'idle' | 'walk' | 'run' | 'attack' | 'harvest' | 'dash' | 'hurt' | 'craft' | 'build' | 'pickup' | 'respawn';
 export const actionDuration: Partial<Record<CharacterAction, number>> = {attack:.4,harvest:.36,dash:.2,hurt:.28,craft:.65,build:.35,pickup:.32,respawn:.8};
 export type Point = {x:number;y:number};
 export type FootPose = Point & {roll:number; planted:boolean};
-export type CharacterPose = { action:CharacterAction; progress:number; bob:number; lean:number; turn:number; headTilt:number; stride:number; lift:number; leftHand:Point; rightHand:Point; leftFoot:FootPose; rightFoot:FootPose; weaponAngle:number; aimWeight:number; cloth:number; crouch:number };
+export type CharacterPose = { action:CharacterAction; progress:number; bob:number; lean:number; turn:number; headTilt:number; stride:number; lift:number; leftHand:Point; rightHand:Point; leftFoot:FootPose; rightFoot:FootPose; weaponAngle:number; aimWeight:number; cloth:number; crouch:number; running:number; runPhase:number; armed:boolean;inertiaLean:number };
 type Channel='lean'|'turn'|'headTilt'|'crouch'|'lx'|'ly'|'rx'|'ry'|'angle'|'aim';
 type Keyframe={at:number} & Partial<Record<Channel,number>>;
 const smooth=(v:number)=>{const t=Math.max(0,Math.min(1,v));return t*t*(3-2*t);};
@@ -30,31 +31,31 @@ export function footCycle(phase:number,speed:number):FootPose {
 }
 function blendPose(a:CharacterPose,b:CharacterPose,t:number):CharacterPose {
  const mix=(x:number,y:number)=>x+(y-x)*t,out={...b};
- for(const k of ['bob','lean','turn','headTilt','stride','lift','weaponAngle','aimWeight','cloth','crouch'] as const)out[k]=mix(a[k],b[k]);
+ for(const k of ['bob','lean','turn','headTilt','stride','lift','weaponAngle','aimWeight','cloth','crouch','running','runPhase','inertiaLean'] as const)out[k]=mix(a[k],b[k]);
  for(const k of ['leftHand','rightHand'] as const)out[k]={x:mix(a[k].x,b[k].x),y:mix(a[k].y,b[k].y)};
  for(const k of ['leftFoot','rightFoot'] as const)out[k]={...b[k],x:mix(a[k].x,b[k].x),y:mix(a[k].y,b[k].y),roll:mix(a[k].roll,b[k].roll)};
  return out;
 }
 export class CharacterMotion {
  action:CharacterAction='idle'; elapsed=0; clock=0; gait=0; speed=0; contacts=0; weapon:'hands'|'spear'|'storm'='hands';
- private contacted=false;private transition:CharacterPose|null=null;private transitionTime=1;private cloth=0;private clothVelocity=0;
+ private contacted=false;private transition:CharacterPose|null=null;private transitionTime=1;private inertia=0;private cloth=0;private clothVelocity=0;
  play(action:CharacterAction){this.transition=this.pose();this.transitionTime=0;this.action=action;this.elapsed=0;this.contacted=false;}
- reset(){this.action='idle';this.elapsed=0;this.speed=0;this.gait=0;this.contacted=false;this.transition=null;this.cloth=0;this.clothVelocity=0;}
- step(dt:number,moving:boolean,distance?:number){
-  this.clock+=dt;this.transitionTime+=dt;this.speed+=(Number(moving)-this.speed)*(1-Math.exp(-dt*14));
-  // 72 texture pixels per gait cycle; WorldScene supplies actual displacement, including collisions.
-  if(this.action!=='dash')this.gait+=(distance??(moving?185*dt/.85:0))/72*Math.PI*2;
+ reset(){this.action='idle';this.elapsed=0;this.speed=0;this.gait=0;this.contacted=false;this.transition=null;this.inertia=0;this.cloth=0;this.clothVelocity=0;}
+ step(dt:number,moving:boolean,distance?:number,velocity?:number,acceleration=0){
+  this.clock+=dt;this.transitionTime+=dt;this.inertia+=(Math.max(-.12,Math.min(.12,acceleration/1050*.12))-this.inertia)*(1-Math.exp(-dt*10));const speedTarget=velocity!==undefined?Math.min(1,velocity/185):distance===undefined?Number(moving):Math.min(1,distance/Math.max(.001,185*dt/.85));this.speed+=(speedTarget-this.speed)*(1-Math.exp(-dt*14));
+  // Blender stride length; the gait phase follows actual displacement, including collisions.
+  if(this.action!=='dash')this.gait+=(distance??(moving?185*dt/.85:0))/RUN_DISTANCE*Math.PI*2;
   let contact=false;
   if(actionDuration[this.action]){this.elapsed+=dt;if((this.action==='attack'||this.action==='harvest')&&!this.contacted&&this.elapsed>=.12){this.contacted=true;this.contacts++;contact=true;}
-   if(this.elapsed>=actionDuration[this.action]!){this.action=moving?'walk':'idle';this.elapsed=0;}
-  }else this.action=moving?'walk':'idle';
+   if(this.elapsed>=actionDuration[this.action]!){this.action=moving?'run':'idle';this.elapsed=0;}
+  }else this.action=moving?'run':'idle';
   const target=-this.rawPose().lean*.55-this.speed*3,steps=Math.max(1,Math.ceil(dt/.016));
   for(let i=0;i<steps;i++){const h=dt/steps;this.clothVelocity+=((target-this.cloth)*65-this.clothVelocity*14)*h;this.cloth+=this.clothVelocity*h;}
   return contact;
  }
  private rawPose():CharacterPose {
   const a=this.action,p=Math.min(1,this.elapsed/(actionDuration[a]||1)),s=Math.sin(this.gait),lf=footCycle(this.gait,this.speed),rf=footCycle(this.gait+Math.PI,this.speed);
-  const pose:CharacterPose={action:a,progress:p,bob:Math.sin(this.clock*2.1)*.45+this.speed*(4.5-Math.cos(this.gait*2)*.7),lean:this.speed*1.4,turn:Math.sin(this.gait)*.025*this.speed,headTilt:Math.sin(this.clock*1.3)*.012,stride:lf.x,lift:134-lf.y,leftHand:{x:-20-s*4*this.speed,y:101+Math.cos(this.gait)*1.5*this.speed},rightHand:{x:20+s*4*this.speed,y:101-Math.cos(this.gait)*1.5*this.speed},leftFoot:lf,rightFoot:rf,weaponAngle:-1.05+s*.055*this.speed,aimWeight:0,cloth:this.cloth,crouch:0};
+  const pose:CharacterPose={action:a,progress:p,bob:Math.sin(this.clock*2.1)*.45+this.speed*(4.5-Math.cos(this.gait*2)*.7),lean:this.speed*1.4,turn:Math.sin(this.gait)*.025*this.speed,headTilt:Math.sin(this.clock*1.3)*.012,stride:lf.x,lift:134-lf.y,leftHand:{x:-20-s*4*this.speed,y:101+Math.cos(this.gait)*1.5*this.speed},rightHand:{x:20+s*4*this.speed,y:101-Math.cos(this.gait)*1.5*this.speed},leftFoot:lf,rightFoot:rf,weaponAngle:-1.05+s*.055*this.speed,aimWeight:0,cloth:this.cloth,crouch:0,running:(a==='run'||a==='walk'||a==='idle')?this.speed:0,runPhase:this.gait/(Math.PI*2),armed:this.weapon!=='hands',inertiaLean:this.inertia};
   let keys:Keyframe[]|undefined;
   if(a==='attack')keys=this.weapon==='spear'?thrust:this.weapon==='storm'?slash:fist;
   else if(a==='harvest')keys=this.weapon==='hands'?fist:downward;

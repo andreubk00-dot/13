@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {makeArt} from './art';
+import {LocomotionBody} from './locomotion';
 import {CharacterRenderer,HERO_FOOT,HERO_SIZE,HERO_SCALE} from './character';
 import {paintGround,paintBuildings,paintStructure} from './rendering';
 import {TILE,WIDTH,HEIGHT,EDGE,key,generateWorld,newGame,parseSave,costs,spend,canAfford,placementError,isSheltered,wearStation,buildNames,resourceNames,emptyBag,fragmentNames,type Build,type Resource,type SaveData,type WorldNode,type Station,type Fragment,structureBlocked,inventoryItems,BACKPACK_SLOTS,gearInfo,equip,equipmentDefense,canAdd,recipeError,biomeAt,biomeNames,type GearId,type EquipmentSlot,validHotbarValue,roofCoversPoint,collectLoot,emptyGear,type GroundLoot} from './world';
@@ -7,7 +8,7 @@ export const SAVE_KEY='living-labyrinth-v1';
 type LiveNode={data:WorldNode;sprite:Phaser.GameObjects.Sprite};
 type Enemy={id:string;sprite:Phaser.GameObjects.Sprite;hp:number;elite:boolean;homeX:number;homeY:number;wind:number;cooldown:number;flash:number};
 export class WorldScene extends Phaser.Scene {
- character!:CharacterRenderer; pendingContact:(()=>void)|null=null;
+ body=new LocomotionBody();character!:CharacterRenderer; pendingContact:(()=>void)|null=null;
  state:SaveData=newGame(); actor!:Phaser.GameObjects.Sprite; grounds!:Phaser.GameObjects.Graphics; buildings!:Phaser.GameObjects.Graphics; roofs!:Phaser.GameObjects.Graphics; ghost!:Phaser.GameObjects.Graphics;
  lootSprites=new Map<string,Phaser.GameObjects.Sprite>();groundTiles:Phaser.GameObjects.Image[]=[];worldData=generateWorld(0);doorOpen=new Map<string,number>();nodeIndex=new Map<string,LiveNode>();ruinIndex=new Set<string>();uiBlocked=false;selectedRotation:0|1=0;onQuickSlot:(i:number)=>void=()=>{};nodes:LiveNode[]=[];enemies:Enemy[]=[];ruins:{x:number;y:number}[]=[];dismantling=false;ambientTimer=0;keys!:Record<string,Phaser.Input.Keyboard.Key>;stamina=100;paused=true;selected:Build|null=null;activeTool='gather';facing={x:1,y:0};attackTimer=0;hurtTimer=0;dashTimer=0;saveTimer=0;uiTimer=0;walkTime=0;wasDanger=false;excursion=false;mobile={x:0,y:0};mouseTile={x:0,y:0};hasMouse=false;storageAvailable=true;onUI:()=>void=()=>{};onToast:(text:string,bad?:boolean)=>void=()=>{};onStation:(station:Station,k:string)=>void=()=>{};onPanel:()=>void=()=>{};audio:AudioContext|null=null;soundEnabled=false;stationKey:string|null=null;groundCycle=-1;
  constructor(){super('world');}
@@ -57,14 +58,16 @@ export class WorldScene extends Phaser.Scene {
  }
  move(sprite:Phaser.GameObjects.Sprite,dx:number,dy:number){const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/6));for(let i=0;i<steps;i++){if(!this.solid(sprite.x+dx/steps,sprite.y))sprite.x+=dx/steps;if(!this.solid(sprite.x,sprite.y+dy/steps))sprite.y+=dy/steps;}}
  update(_time:number,delta:number){
-  if(!this.actor||this.paused)return;const dt=Math.min(delta,100)/1000;
-  if(this.uiBlocked){if(!this.pendingContact){this.character.motion.step(dt,false);this.drawEquipment();}return;}
+  if(!this.actor)return;if(this.paused){this.body.reset();return;}const dt=Math.min(delta,100)/1000;
+  if(this.uiBlocked){this.body.reset();if(!this.pendingContact){this.character.motion.step(dt,false);this.drawEquipment();}return;}
   this.state.time+=dt;this.attackTimer=Math.max(0,this.attackTimer-dt);this.hurtTimer=Math.max(0,this.hurtTimer-dt);this.dashTimer=Math.max(0,this.dashTimer-dt);
   let dx=(this.keys.D.isDown||this.keys.RIGHT.isDown?1:0)-(this.keys.A.isDown||this.keys.LEFT.isDown?1:0)+this.mobile.x,dy=(this.keys.S.isDown||this.keys.DOWN.isDown?1:0)-(this.keys.W.isDown||this.keys.UP.isDown?1:0)+this.mobile.y;
-  const moving=Math.hypot(dx,dy)>0;if(moving){const l=Math.hypot(dx,dy);dx/=l;dy/=l;if(this.character.motion.action!=='attack'&&this.character.motion.action!=='harvest')this.facing={x:dx,y:dy};this.walkTime+=dt;}
-  if(Phaser.Input.Keyboard.JustDown(this.keys.SHIFT))this.dash();
-  const oldX=this.actor.x,oldY=this.actor.y;const speed=this.dashTimer>0?590:185;this.move(this.actor,(this.dashTimer>0?this.facing.x:dx)*speed*dt,(this.dashTimer>0?this.facing.y:dy)*speed*dt);
-  if(this.character.motion.step(dt,Math.hypot(this.actor.x-oldX,this.actor.y-oldY)>.1,Math.hypot(this.actor.x-oldX,this.actor.y-oldY)/HERO_SCALE)){const contact=this.pendingContact;this.pendingContact=null;contact?.();}
+  const inputLength=Math.hypot(dx,dy);if(inputLength>1){dx/=inputLength;dy/=inputLength;}
+  if(Phaser.Input.Keyboard.JustDown(this.keys.SHIFT)){const l=Math.hypot(dx,dy);if(l>0)this.facing={x:dx/l,y:dy/l};this.dash();}
+  if(this.dashTimer>0){this.body.reset();this.move(this.actor,this.facing.x*590*dt,this.facing.y*590*dt);}
+  else this.body.step(dt,{x:dx,y:dy},(mx,my)=>{const x=this.actor.x,y=this.actor.y;this.move(this.actor,mx,my);return{x:this.actor.x-x,y:this.actor.y-y};});
+  if(this.body.speed>4&&this.character.motion.action!=='attack'&&this.character.motion.action!=='harvest')this.facing={x:this.body.vx/this.body.speed,y:this.body.vy/this.body.speed};
+  if(this.character.motion.step(dt,this.body.speed>1,this.body.distance/HERO_SCALE,this.body.speed,this.body.acceleration)){const contact=this.pendingContact;this.pendingContact=null;contact?.();}
   this.actor.setDepth(this.actor.y);
   this.actor.setAlpha(this.hurtTimer>0?.84+Math.sin(this.state.time*14)*.12:1);this.stamina=Math.min(100,this.stamina+dt*19);
   if(Phaser.Input.Keyboard.JustDown(this.keys.E))this.interact();if(Phaser.Input.Keyboard.JustDown(this.keys.SPACE)){if(this.dismantling)this.dismantle(Math.floor((this.actor.x+this.facing.x*70)/TILE),Math.floor((this.actor.y+this.facing.y*70)/TILE));else if(this.selected)this.placeAhead();else this.attack();}
@@ -219,9 +222,9 @@ export class WorldScene extends Phaser.Scene {
   const from=deposit?this.state.bag:this.state.stash,to=deposit?this.state.stash:this.state.bag;for(const r of Object.keys(emptyBag()) as Resource[]){to[r]+=from[r];from[r]=0;}
   const ff=deposit?this.state.fragments:this.state.stashFragments,tf=deposit?this.state.stashFragments:this.state.fragments;ff.forEach((n,i)=>{tf[i]+=n;ff[i]=0;});this.save();this.onUI();this.onToast(deposit?'Материалы и части чертежей убраны в сундук':'Содержимое сундука забрано');
  }
- die(){this.pendingContact=null;this.character.motion.play('respawn');this.state.hp=100;this.state.bag=Object.fromEntries(Object.entries(this.state.bag).map(([r,n])=>[r,Math.floor(n/2)])) as import('./world').Bag;this.state.fragments=[0,0,0];this.actor.setPosition(9*TILE+32,16*TILE+32);this.state.x=this.actor.x;this.state.y=this.actor.y;this.hurtTimer=2;this.state.cycle++;this.state.dead=[];this.state.removed=this.state.removed.filter(id=>id.startsWith('s'));this.loadEntities();this.drawGround();this.wasDanger=false;this.excursion=false;this.onToast('Ты очнулся у убежища. Половина материалов и все части в рюкзаке потеряны.',true);this.save();}
+ die(){this.body.reset();this.pendingContact=null;this.character.motion.play('respawn');this.state.hp=100;this.state.bag=Object.fromEntries(Object.entries(this.state.bag).map(([r,n])=>[r,Math.floor(n/2)])) as import('./world').Bag;this.state.fragments=[0,0,0];this.actor.setPosition(9*TILE+32,16*TILE+32);this.state.x=this.actor.x;this.state.y=this.actor.y;this.hurtTimer=2;this.state.cycle++;this.state.dead=[];this.state.removed=this.state.removed.filter(id=>id.startsWith('s'));this.loadEntities();this.drawGround();this.wasDanger=false;this.excursion=false;this.onToast('Ты очнулся у убежища. Половина материалов и все части в рюкзаке потеряны.',true);this.save();}
  save(){if(!this.actor)return;this.state.x=this.actor.x;this.state.y=this.actor.y;try{localStorage.setItem(SAVE_KEY,JSON.stringify(this.state));this.storageAvailable=true;}catch{this.storageAvailable=false;}}
- reset(){try{localStorage.removeItem(SAVE_KEY);}catch{}this.pendingContact=null;this.character.motion.reset();this.attackTimer=0;this.dashTimer=0;this.hurtTimer=0;this.state=newGame();this.actor.setPosition(this.state.x,this.state.y);this.stamina=100;this.wasDanger=false;this.excursion=false;this.selected=null;this.dismantling=false;this.doorOpen.clear();this.drawBuildings();this.drawGround();this.loadEntities();this.save();this.onUI();}
+ reset(){this.body.reset();try{localStorage.removeItem(SAVE_KEY);}catch{}this.pendingContact=null;this.character.motion.reset();this.attackTimer=0;this.dashTimer=0;this.hurtTimer=0;this.state=newGame();this.actor.setPosition(this.state.x,this.state.y);this.stamina=100;this.wasDanger=false;this.excursion=false;this.selected=null;this.dismantling=false;this.doorOpen.clear();this.drawBuildings();this.drawGround();this.loadEntities();this.save();this.onUI();}
  floatText(x:number,y:number,text:string,color:string){const t=this.add.text(x,y,text,{fontFamily:'Manrope, sans-serif',fontSize:'13px',color,stroke:'#1a3033',strokeThickness:3}).setOrigin(.5).setDepth(10010);this.tweens.add({targets:t,y:y-45,alpha:0,duration:1100,ease:'Cubic.Out',onComplete:()=>t.destroy()});}
  burst(x:number,y:number,color:number,count=8){for(let i=0;i<count;i++){const g=this.add.rectangle(x,y-15,3+Math.random()*3,3+Math.random()*3,color).setDepth(10005);this.tweens.add({targets:g,x:x+(Math.random()-.5)*80,y:y-15-Math.random()*60,alpha:0,angle:120,duration:350+Math.random()*250,onComplete:()=>g.destroy()});}}
  playTone(freq:number,duration:number){if(!this.soundEnabled)return;try{this.audio??=new AudioContext();void this.audio.resume();const o=this.audio.createOscillator(),g=this.audio.createGain();o.type='triangle';o.frequency.setValueAtTime(freq,this.audio.currentTime);o.frequency.exponentialRampToValueAtTime(freq*.55,this.audio.currentTime+duration);g.gain.setValueAtTime(.035,this.audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,this.audio.currentTime+duration);o.connect(g);g.connect(this.audio.destination);o.start();o.stop(this.audio.currentTime+duration);}catch{this.soundEnabled=false;}}

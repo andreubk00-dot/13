@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {CharacterMotion,type CharacterPose,type Point} from './character-motion';
+import {projectRunJoint,mixPoint,sampleRunJoint} from './run-animation';
 import type {SaveData} from './world';
 import {solveLimb,transformPoint,characterArm,weaponTransform,advanceAngle,HERO_SIZE,HERO_FOOT} from './character-rig';
 export {HERO_SIZE,HERO_FOOT,HERO_SCALE} from './character-rig';
@@ -9,12 +10,15 @@ function stroke(c:CanvasRenderingContext2D,a:Point,b:Point,color:string,width:nu
 function box(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,color:string,r=4){c.fillStyle=color;c.beginPath();c.roundRect(x,y,w,h,r);c.fill();}
 export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,facing:Point,equipment:SaveData['equipment'],trail:Point[]=[]){
  c.clearRect(0,0,HERO_SIZE,HERO_SIZE);c.save();c.lineCap='round';c.lineJoin='round';
- oval(c,HERO_SIZE/2,139,48-pose.crouch*.4,12,'#0b252e45');
- const side=Math.abs(facing.x),back=facing.y<-.38,profile=side>.86,mirror=facing.x<0;
+ const flight=Math.max(0,Math.min(sampleRunJoint('foot.L.head',pose.runPhase)[2],sampleRunJoint('foot.R.head',pose.runPhase)[2])-.065)*54*pose.running;
+ oval(c,HERO_SIZE/2,139,48-pose.crouch*.4-flight*.7,12-flight*.15,'#0b252e45');
+ const side=Math.abs(facing.x),back=facing.y<-.38,profile=side>.86,mirror=facing.x<0,nearArm=facing.x>.3?-1:1;
  c.translate(HERO_SIZE/2,HERO_FOOT);if(mirror)c.scale(-1,1);c.translate(0,-HERO_FOOT);
+ for(const sideName of ['L','R'] as const)if(pose.running>.05){const foot=sampleRunJoint(`foot.${sideName}.head`,pose.runPhase),point=projectRunJoint(`foot.${sideName}.head`,pose,facing),height=Math.max(0,foot[2]-.065)*54;oval(c,point.x,point.y+foot[2]*54,12,4,`rgba(11,37,46,${pose.running*.22/(1+height/12)})`);}
  const lean=pose.lean*(side*.85+.15),bob=pose.bob+pose.crouch;
- const center=lean*.5,width=16-side*5,pivot={x:center+lean*.5,y:74+bob};
- const attached=(x:number,y:number)=>transformPoint({x,y},pivot,pose.turn);
+ const center=lean*.5,width=16-side*5,pivot=mixPoint({x:center+lean*.5,y:74+bob},projectRunJoint('spine.tail',pose,facing),pose.running);
+ const low=projectRunJoint('spine.head',pose,facing),high=projectRunJoint('spine.tail',pose,facing),bodyTurn=pose.turn*(1-pose.running)+Math.atan2(high.x-low.x,low.y-high.y)*pose.running;
+ const attached=(x:number,y:number)=>transformPoint({x,y},pivot,bodyTurn);
  if(trail.length>1&&equipment.weapon==='storm'){c.strokeStyle='#b2e2cd65';c.lineWidth=3;c.beginPath();trail.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();}
  const boot=(foot:Point,near:boolean,roll:number)=>{
   c.save();c.translate(foot.x,foot.y);c.rotate(roll);foot={x:0,y:0};
@@ -29,10 +33,11 @@ export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,fac
   const lateral=side>.2?sign*(7-side*3):hip.x,forwardHip=side>.2?(hip.x-lateral)/side:0;
   const limb=solveLimb({x:forwardHip,y:hip.y-forwardHip*facing.y*.28},{x:foot.x,y:foot.y},20,21,-1);
   const project=(p:Point)=>({x:lateral+p.x*side,y:p.y+p.x*facing.y*.28});
-  const start={x:hip.x,y:hip.y},knee=project(limb.joint),end=project(limb.end);
-  stroke(c,start,knee,'#263944',11);stroke(c,start,knee,near?'#566975':'#3d515f',8);stroke(c,knee,end,near?'#41596a':'#2c4251',8);boot(end,near,foot.roll*side);
+  const sideName=sign<0?'L':'R',start=mixPoint({x:hip.x,y:hip.y},projectRunJoint(`thigh.${sideName}.head`,pose,facing),pose.running),knee=mixPoint(project(limb.joint),projectRunJoint(`shin.${sideName}.head`,pose,facing),pose.running),end=mixPoint(project(limb.end),projectRunJoint(`foot.${sideName}.head`,pose,facing),pose.running);
+  stroke(c,start,knee,'#263944',11);stroke(c,start,knee,near?'#566975':'#3d515f',8);stroke(c,knee,end,near?'#41596a':'#2c4251',8);const heel=sampleRunJoint(`foot.${sideName}.head`,pose.runPhase),toe=sampleRunJoint(`foot.${sideName}.tail`,pose.runPhase),runRoll=Math.atan2(-(toe[2]-heel[2]),toe[1]-heel[1]);boot(end,near,(foot.roll*(1-pose.running)+runRoll*pose.running)*side);
  };
- leg(-1,false);leg(1,true);
+ const leftGround=projectRunJoint('foot.L.head',pose,facing).y+sampleRunJoint('foot.L.head',pose.runPhase)[2]*54,rightGround=projectRunJoint('foot.R.head',pose,facing).y+sampleRunJoint('foot.R.head',pose.runPhase)[2]*54;
+ if(pose.running>.25&&leftGround>rightGround){leg(1,false);leg(-1,true);}else{leg(-1,false);leg(1,true);}
  const armRig=(sign:number)=>characterArm(pose,facing,sign);
  const arm=(sign:number,near:boolean)=>{
   const {root:a,joint:e,end:h}=armRig(sign);stroke(c,a,e,'#4a3833',12);stroke(c,a,e,near?'#c58c5d':'#96664c',9);stroke(c,e,h,'#4a3833',9);stroke(c,e,h,near?'#b88253':'#825942',6);oval(c,h.x,h.y,8,9,near?'#e8c49e':'#c79977');
@@ -47,9 +52,9 @@ export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,fac
   c.restore();
  };
  const tool=['craft','build'].includes(pose.action);
- arm(-1,false);if(back) {weapon(tool);arm(1,false);}
+ arm(-nearArm,false);if(back||nearArm!==1)weapon(tool);
  // Coat silhouette, seams, belt and attached satchel move with the torso.
- c.save();c.translate(pivot.x,pivot.y);c.rotate(pose.turn);
+ c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);
  c.fillStyle='#4c3933';c.beginPath();c.moveTo(-width-1,-14);c.quadraticCurveTo(0,-24,width+1,-14);c.lineTo(width+3,26);c.quadraticCurveTo(0,31,-width-3,26);c.closePath();c.fill();
  const coat=c.createLinearGradient(-width,0,width,0);coat.addColorStop(0,'#b17950');coat.addColorStop(.55,'#cf9869');coat.addColorStop(1,'#9f684b');
  c.fillStyle=coat;c.beginPath();c.moveTo(-width,-13);c.quadraticCurveTo(0,-23,width,-13);c.lineTo(width+1,24);c.quadraticCurveTo(0,27,-width-1,24);c.closePath();c.fill();
@@ -60,9 +65,9 @@ export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,fac
  else{stroke(c,{x:-width+1,y:-15},{x:width-3,y:14},'#614737',4);box(c,-width-4,12,12,14,'#604b3d',3);box(c,-width-3,12,10,5,'#8d7251',2);oval(c,-width+2,18,3,3,'#ccb079');}
  c.restore();
  // Scarf tails lag behind movement, instead of scaling the entire sprite.
- c.save();c.translate(pivot.x,pivot.y);c.rotate(pose.turn);c.fillStyle='#a4b88f';c.beginPath();c.moveTo(8,-14);c.lineTo(12+pose.cloth,8);c.lineTo(18+pose.cloth,5);c.lineTo(14,-16);c.closePath();c.fill();c.restore();
- const head=attached(0,-32),hx=head.x,hy=head.y;
- c.save();c.translate(hx,hy);c.rotate(pose.headTilt+pose.turn*.35);
+ c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);c.fillStyle='#a4b88f';c.beginPath();c.moveTo(8,-14);c.lineTo(12+pose.cloth,8);c.lineTo(18+pose.cloth,5);c.lineTo(14,-16);c.closePath();c.fill();c.restore();
+ const runHead=projectRunJoint('head.tail',pose,facing);runHead.y-=5.4;const head=mixPoint(attached(0,-32),runHead,pose.running),hx=head.x,hy=head.y;
+ c.save();c.translate(hx,hy);c.rotate(pose.headTilt+bodyTurn*.35);
  oval(c,0,1,profile?27:32,35,'#493a33');
  if(!back){oval(c,profile?3:0,3,profile?23:27,30,'#e4bd96');oval(c,profile?-9:-14,4,7,9,'#cf9d79');
   c.fillStyle='#594435';c.beginPath();c.moveTo(-15,-3);c.quadraticCurveTo(-17,-21,1,-19);c.quadraticCurveTo(18,-19,15,-4);c.lineTo(9,-9);c.lineTo(4,-6);c.lineTo(-3,-10);c.lineTo(-9,-2);c.closePath();c.fill();stroke(c,{x:-7,y:-14},{x:8,y:-15},'#876443',2);
@@ -71,8 +76,8 @@ export function paintCharacter(c:CanvasRenderingContext2D,pose:CharacterPose,fac
  }else{oval(c,0,0,30,33,'#655039');stroke(c,{x:-7,y:-11},{x:3,y:-14},'#92714d',2);stroke(c,{x:8,y:-8},{x:11,y:3},'#7b5e42',2);}
  if(equipment.head){c.fillStyle='#749592';c.beginPath();c.moveTo(-16,-1);c.quadraticCurveTo(-18,-23,0,-23);c.quadraticCurveTo(18,-22,16,-1);c.lineTo(11,1);c.lineTo(9,-7);c.lineTo(-9,-7);c.lineTo(-11,1);c.closePath();c.fill();stroke(c,{x:0,y:-20},{x:0,y:-8},'#d2dfc7',3);stroke(c,{x:-13,y:-6},{x:13,y:-6},'#3c5a63',2);}
  c.restore();
- c.save();c.translate(pivot.x,pivot.y);c.rotate(pose.turn);box(c,-14,-18,28,7,'#d0dbb5',4);stroke(c,{x:-10,y:-16},{x:10,y:-16},'#eff0cc',1.5);c.restore();
- if(!back){arm(1,true);weapon(tool);}
+ c.save();c.translate(pivot.x,pivot.y);c.rotate(bodyTurn);box(c,-14,-18,28,7,'#d0dbb5',4);stroke(c,{x:-10,y:-16},{x:10,y:-16},'#eff0cc',1.5);c.restore();
+ arm(nearArm,true);if(!back&&nearArm===1)weapon(tool);
  c.restore();
 }
 export class CharacterRenderer {
